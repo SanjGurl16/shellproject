@@ -11,7 +11,7 @@ int lsh_env(char **args);
 int lsh_help(char **args);
 int lsh_exit(char **args);
 
-// Builtin table
+// Builtin command table
 char *builtin_str[] = {
   "cd",
   "echo",
@@ -48,7 +48,7 @@ int lsh_cd(char **args) {
 
 // echo simply prints arguments
 int lsh_echo(char **args) {
-  int i = 1
+  int i = 1;
   while (args[i] != NULL) {
     printf("%s ", args[i]);
     i++;
@@ -83,6 +83,6 @@ int lsh_help(char **args) {
   return 1;
 }
 
-int builtin_exit(char **args) {
+int lsh_exit(char **args) {
   return 0; // returning 0 tells main loop to exit
 }
