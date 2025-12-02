@@ -3,22 +3,22 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/wait.h>
-#include "./lib/linenoise.h"
+#include "builtins.h"
 
 #define PROMPT "$ "
-#define HISTORY_LENGTH 1024
 #define MAX_ARGS 1024
 #define TOKEN_SEP " \t"
 
 
 // Read Input
+// Tokenization included; strtok
 
 int s_read(char *input, char **args) {
    int i = 0;
    char *token = strtok(input, TOKEN_SEP);
    while (token != NULL && i < (MAX_ARGS - 1)) {
       args[i++] = token;
-      token = strtok(NULL, " \t");
+      token = strtok(NULL, TOKEN_SEP);
    }
    args[i] = NULL;
    return i; 
@@ -26,65 +26,58 @@ int s_read(char *input, char **args) {
 
 //Execute Helper
 int s_execute(char *cmd, char **cmd_args) {
-   fprintf(stdout, "Executing '%s'!\n", cmd);
-
+   
+   pid_t pid = fork();
    int status;
-   pid_t pid;
-
-   pid = fork();
+   
    if (pid < 0) {
-      fprintf(stderr, "Could not execute!\n");
+      perror("fork");
       return -1;
 
    }
+
    if (pid == 0) {
-    execv(cmd, cmd_args);
+    execvp(cmd, cmd_args);
+    perror(cmd);
    } else {
+
    // parent: wait for child
    if (waitpid (pid, &status, 0) != pid) {
-     fprintf(stderr, "Could not wait for child!\n");
+     perror("waitpid");
      return -1;
    }
  }
  return status;
 } 
 
-
-
-int main(void) {
-  if (!linenoiseHistorySetMaxLen(HISTORY_LENGTH)) {
-    fprintf(stderr, "COuld not set linenoise history!");
-    exit(1);
-  }
-
-  char *line;
+int main(void) {  
+  char *line = NULL;
+  size_t len = 0;
   char *args[MAX_ARGS];
-  while((line = linenoise(PROMPT)) != NULL) {
-   
+ 
+ 
+  while (1) {  
 // read step
-   int args_read = s_read(line, args);
-    
-    fprintf(stdout, "Read %d args\n", args_read);
-    for (int i = 0; i < args_read; i++) {
-        fprintf(stdout, "arg[%d] = %s\n", i, args[i]);
-    }
-    
-    // skip empty lines
-    if (args_read == 0) {
-       linenoiseFree(line);
-       continue;
-    }
+   printf("%s", PROMPT);
+   fflush(stdout);
+  
+   ssize_t read = getline(&line, &len, stdin);
 
-   // TODO: Eval + Print Step
-    char *cmd = args[0];
-    char **cmd_args = args;
-    s_execute(cmd, cmd_args);
-
-
-    linenoiseHistoryAdd(line);
-    linenoiseFree(line);
-
-
+   if (read == -1) {
+	 printf("\n");
+	 break;
   }
+  // Remove the newline 
+  line[strcspn(line, "\n")] = '\0';
+
+  int args_read = s_read(line, args);
+
+  if (args_read == 0) 
+       continue;
+
+     s_execute(args[0], args);
+  }
+  free(line);
   return 0; 
+
 }
