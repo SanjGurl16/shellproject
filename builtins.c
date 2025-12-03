@@ -13,12 +13,17 @@ struct builtin builtins[] = {
   { "exit", cmd_exit }
 }; 
 
-// 
-struct builtin *num_builtin(size_t *count) {
+// Return pointer to builtin table + count
+struct builtin *get_builtins(size_t *count) {
   if (count) {
     *count = sizeof(builtins) / sizeof(builtins[0]);
   }
   return builtins;
+}
+
+// Return number of builtins only
+size_t builtin_count() {
+  return sizeof(builtins) / sizeof(builtins[0]);
 }
 
 // Builtin implementations
@@ -43,6 +48,8 @@ int cmd_echo(char **args) {
 }
 
 int cmd_pwd(char **args) {
+  (void)args;
+  
   char buffer[1024];
   if (getcwd(buffer, sizeof(buffer)) == NULL) {
     perror("pwd");
@@ -53,6 +60,8 @@ int cmd_pwd(char **args) {
 }
 
 int cmd_env(char **args) {
+  (void)args;
+  
   extern char **environ;
   for (char **env = environ; *env; env++) {
     puts(*env);
@@ -61,6 +70,8 @@ int cmd_env(char **args) {
 }
 
 int cmd_help(char **args) {
+  (void)args;
+  
   puts("Available built-ins:");
   for (size_t i = 0; i < num_builtins(); i++) {
     printf(" - %s\n", builtins[i].name);
@@ -69,5 +80,6 @@ int cmd_help(char **args) {
 }
 
 int cmd_exit(char **args) {
+  (void)args;
   return 0; // returning 0 tells main loop to exit
 }
