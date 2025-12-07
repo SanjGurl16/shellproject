@@ -70,18 +70,25 @@ int sh_read(char *input, char **args) {
    return i; 
 }
 
+int is_parent_builtin(const char *cmd) {
+  return (strcmp(cmd, "cd") == 0 || strcmp(cmd, "exit") == 0);
+}
+
 //Execute
 int sh_execute(char **args) {
     if (args[0] == NULL) return 1; // empty command
 
     
-    size_t count;
-    struct builtin *b = get_builtins(&count);
-
-    for (size_t i = 0; i < count; i++) {
-       if (strcmp(args[0], b[i].name) == 0) {
-         return b[i].handler(args);   
+    if (is_parent_builtin(args[0])) {
+       if (strcmp(args[0], "cd") == 0) {
+          chdir(args[1]);
+       
+       } else if (strcmp(args[0], "exit") == 0) {
+          exit(0);
+       
        }
+       return 1;
+   
     }  
 
     // Check for simple redirection in single commands
