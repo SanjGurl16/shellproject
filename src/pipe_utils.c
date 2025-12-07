@@ -4,6 +4,8 @@
 #include <unistd.h>
 #include <string.h>
 #include <sys/wait.h>
+#include <fcntl.h>
+
 
 void error_and_exit(const char *msg) {
   perror(msg);
@@ -20,7 +22,7 @@ void parse_command(char *cmd, char **argv) {
   argv[i] = NULL;
 }
 
-int run_pipeline(char *cmds[][MAX_ARGS], int num_cmds) {
+int run_pipeline(char *cmds[][MAX_ARGS], int num_cmds, char *input_file, char *output_file, int append) {
   int i;
   int pipefd[MAX_CMDS - 1][2];
 
@@ -38,6 +40,22 @@ int run_pipeline(char *cmds[][MAX_ARGS], int num_cmds) {
 
     if (pid == 0) {
       // CHILD PROCESS
+
+      if (i == 0 && input_file) {
+         int fd = open(input_file, O_RDONLY);
+	 if (fd < 0) error_and_exit("Open input");
+	 dup2(fd, STDIN_FILENO);
+	 close(fd);
+      }
+      
+      if (i == num_cmds - 1 && output_file) {
+        int flags = O_WRONLY | O_CREAT | (append ? O_APPEND : O_TRUNC);
+	int fd = open(output_file, flags, 0644);
+	if (fd < 0) error_and_exit("open output");
+	dup2(fd, STDOUT_FILENO);
+	close(fd);
+      }
+
 
       // If not first command -> read from previous pipe
       if (i > 0) {

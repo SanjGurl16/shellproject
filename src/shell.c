@@ -6,18 +6,58 @@
 #include <sys/types.h>
 #include "builtins.h"
 #include <fcntl.h>
+#include "pipe_utils.h"
 
 
 #define PROMPT "$ "
-#define MAX_ARGS 1024
 #define TOKEN_SEP " \t" 
-#define MAX_CMDS 32
 #define MAX_CMD_ARGS MAX_ARGS
 
 // shell.c
 
 // Read Input
 // Tokenization included; strtok
+
+int sh_execute_pipeline_line(char *line) {
+   char *input_file = NULL;
+   char *output_file = NULL;
+   int append = 0;
+
+     // Detect redirection
+    char *redir;
+    if ((redir = strstr(line, ">>"))) {
+        *redir = '\0';
+        output_file = redir + 2;
+        append = 1;
+    } else if ((redir = strstr(line, ">"))) {
+        *redir = '\0';
+        output_file = redir + 1;
+    }
+    if ((redir = strstr(line, "<"))) {
+        *redir = '\0';
+        input_file = redir + 1;
+    }
+
+    // Trim whitespace from filenames
+    if (input_file) while (*input_file == ' ') input_file++;
+    if (output_file) while (*output_file == ' ') output_file++;
+
+    // Split pipeline
+    char *cmd_strings[MAX_CMDS];
+    int num_cmds = 0;
+    char *token = strtok(line, "|");
+    while (token != NULL && num_cmds < MAX_CMDS) {
+        while (*token == ' ') token++; // trim leading spaces
+        cmd_strings[num_cmds++] = token;
+        token = strtok(NULL, "|");
+    }
+
+    char *cmds[MAX_CMDS][MAX_ARGS];
+    for (int i = 0; i < num_cmds; i++)
+        parse_command(cmd_strings[i], cmds[i]);
+
+    return run_pipeline(cmds, num_cmds, input_file, output_file, append);
+ }
 
 int sh_read(char *input, char **args) {
    int i = 0;
@@ -30,112 +70,79 @@ int sh_read(char *input, char **args) {
    return i; 
 }
 
-int is_parent_builtin(const char *cmd) {
-   return (strcmp(cmd, "cd") == 0 || strcmp(cmd, "exit") == 0);
-}
-
-// new addition
-struct command {
-    char *argv[MAX_CMD_ARGS];
-    char *in_file;
-    char *out_file;
-    char *append_file;
-};
-
-
 //Execute
-int sh_execute(char *cmd, char **cmd_args) {
-    if (args[0] == NULL)
-	    return 1;	
+int sh_execute(char **args) {
+    if (args[0] == NULL) return 1; // empty command
+
     
     size_t count;
-    struct builtin *table = get_builtins(&count);
+    struct builtin *b = get_builtins(&count);
 
-    /* Check for built-in commands first */
-    char *infile = NULL;
-    char *outfile = NULL;
+    for (size_t i = 0; i < count; i++) {
+       if (strcmp(args[0], b[i].name) == 0) {
+         return b[i].handler(args);   
+       }
+    }  
+
+    // Check for simple redirection in single commands
+    char *input_file = NULL;
+    char *output_file = NULL;
     int append = 0;
 
-
-    /* Scan for redirection before checking builtins */
-    for (int i = 0; args[i]; i++) {
-         if (strcmp(args[i], "<") == 0 && args[i+1]) {
-	     infile = args[i+1];
-	     args[i] = NULL;
-	     break;
-	 }
-	 if (strcmp(args[i], ">") == 0 && args[i+1]) {
-	     outfile = args[i+1];
-	     append = 0;
-	     args[i] = NULL;
-	     break;
-	 }
-        if (strcmp(args[i], ">>") == 0 && args[i+1]) {
-	    outfile = args[i+1];
-	    append = 1;
-	    args[i] = NULL;
-	    break;
-	}
-    }
-
-  /* Check for builtins */
-    for(size_t j = 0; j < count; j++) {
-      if (strcmp(args[0], table[j].name) == 0) {
-          int saved_stdin = -1, saved_stdout = -1;
-  
-	  // Input redirection
-	  if (infile) {
-	     int fd = open(infile, O_RDONLY);
-	     if (fd < 0) { perror(infile); return 1; }
-	     saved_stdin = dup(0);
-	     dup2(fd, 0);
-	     close(fd);
-	  }
-          //Output redirection
-	  if (outfile) {
-	     int fd;
-	     if (append)
-		 fd = open(outfile, O_WRONLY | O_CREAT | O_APPEND, 0644);
-	     else 
-		 fd = open(outfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-
-	     if (fd < 0) { perror(outfile); return 1; }
-	     saved_stdout = dup(1);
-	     dup2(fd, 1);
-	     close(fd);
-	  }
-          int result = table[j].func(args);
-
-	  // Restore STDIN/STDOUT
-	  if (saved_stdin != -1) {
-	     dup2(saved_stdin, 0);
-	     close(saved_stdin);
-	  }
-	  if (saved_stdout != -1) {
-	     dup2(saved_stdout, 1);
-	     close(saved_stdout);
-	  }
-	  return result;
-      }
-        
+    for (int i = 0; args[i] != NULL; i++) {
+        if (strcmp(args[i], "<") == 0) {
+            input_file = args[i + 1];
+            args[i] = NULL;
+            i++;
+        } else if (strcmp(args[i], ">") == 0) {
+            output_file = args[i + 1];
+            append = 0;
+            args[i] = NULL;
+            i++;
+        } else if (strcmp(args[i], ">>") == 0) {
+            output_file = args[i + 1];
+            append = 1;
+            args[i] = NULL;
+            i++;
+        }
     }
 
     pid_t pid = fork();
-    int status;
-
     if (pid == 0) { // child
+        // Input redirection
+        if (input_file) {
+            int fd = open(input_file, O_RDONLY);
+            if (fd < 0) { perror("open input"); exit(1); }
+            dup2(fd, STDIN_FILENO);
+            close(fd);
+        }
+
+        // Output redirection
+        if (output_file) {
+            int flags = O_WRONLY | O_CREAT | (append ? O_APPEND : O_TRUNC);
+            int fd = open(output_file, flags, 0644);
+            if (fd < 0) { perror("open output"); exit(1); }
+            dup2(fd, STDOUT_FILENO);
+            close(fd);
+        }
+
         execvp(args[0], args);
-	perror(args[0]);
-	exit(1);
-    } else if (pid > 0 ) {
-     int status;
-     waitpid(pid, &status, 0);
-     return 1;
-   }else {
-      perror("fork");
-      return 1;
-   }
-    
+        perror(args[0]);
+        exit(1);
+    } else if (pid > 0) { // parent
+        int status;
+        waitpid(pid, &status, 0);
+        return 1;
+    } else {
+        perror("fork");
+        return 1;
+    }
+}
+
+// Detect if the line contains a pipeline
+int contains_pipe(char *line) {
+    return strchr(line, '|') != NULL;
+}
  
 
 int main(void) {  
@@ -157,14 +164,18 @@ int main(void) {
   }
   // Remove the newline 
   line[strcspn(line, "\n")] = '\0';
+  if (strlen(line) == 0) continue;
 
-  int args_read = sh_read(line, args);
+  if (contains_pipe(line)) {
+    sh_execute_pipeline_line(line);  
+  
+  } else {
+   sh_read(line, args);
+   sh_execute(args);
 
-  if (args_read == 0) 
-       continue;
-
-     sh_execute(args[0], args);
   }
+}
+
   free(line);
   return 0; 
 

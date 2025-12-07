@@ -11,6 +11,6 @@
 void parse_command(char *cmd, char **argv);
 
 // Runs a pipeline of N commands
-int run_pipeline(char *cmds[][MAX_ARGS], int num_cmds);
+int run_pipeline(char *cmds[][MAX_ARGS], int num_cmds, char *input_file, char *output_file, int append);
 
 #endif
