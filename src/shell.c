@@ -197,8 +197,8 @@ int main(void) {
 
       execute_single(args);
     }
-}
+ }
 
-free(line);
-return 0;
+ free(line);
+ return 0;
 }
